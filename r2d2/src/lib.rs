@@ -1,9 +1,3 @@
-extern crate failure;
-extern crate futures;
-extern crate pulsar;
-extern crate r2d2;
-extern crate tokio;
-
 #[cfg(test)]
 extern crate serde;
 
@@ -11,30 +5,28 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-use failure::Fail;
 use futures::Future;
-use pulsar::{Connection, Producer, Error};
+use pulsar::{Connection, Producer, Error, ProducerError, Authentication};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub struct ConnectionManager {
     addr: String,
-    executor: tokio::runtime::TaskExecutor
+    executor: tokio::runtime::TaskExecutor,
+    authentication: Option<Authentication>,
 }
 
 impl r2d2::ManageConnection for ConnectionManager {
     type Connection = Connection;
-    type Error = failure::Compat<Error>;
+    type Error = Error;
 
     fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        let connection = Future::wait(Connection::new(self.addr.clone(), self.executor.clone()))
-            .map_err(|e| e.compat())?;
+        let connection = Future::wait(Connection::new(self.addr.clone(), self.authentication.clone(), self.executor.clone()))?;
         Ok(connection)
     }
 
     fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
         Future::wait(conn.sender().lookup_topic(String::from("test")))
             .map(|_| ())
-            .map_err(|e| e.compat())
     }
 
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
@@ -47,13 +39,15 @@ pub struct ProducerConnectionManager {
     producer_name: String,
     executor: tokio::runtime::TaskExecutor,
     connection_index: AtomicUsize,
+    authentication: Option<Authentication>,
 }
 
 impl ProducerConnectionManager {
-    pub fn new<S1: Into<String>, S2: Into<String>>(addr: S1, producer_name: S2, executor: tokio::runtime::TaskExecutor) -> ProducerConnectionManager {
+    pub fn new<S1: Into<String>, S2: Into<String>>(addr: S1, producer_name: S2, authentication: Option<Authentication>, executor: tokio::runtime::TaskExecutor) -> ProducerConnectionManager {
         ProducerConnectionManager {
             addr: addr.into(),
             producer_name: producer_name.into(),
+            authentication,
             executor,
             connection_index: AtomicUsize::new(0)
         }
@@ -62,17 +56,16 @@ impl ProducerConnectionManager {
 
 impl r2d2::ManageConnection for ProducerConnectionManager {
     type Connection = Producer;
-    type Error = failure::Compat<Error>;
+    type Error = ProducerError;
 
     fn connect(&self) -> Result<Producer, Self::Error> {
         let name = format!("{}_{}", &self.producer_name, self.connection_index.fetch_add(1, Ordering::Relaxed));
-        Producer::new(self.addr.as_str(), name, self.executor.clone())
+        Producer::new(self.addr.as_str(), name, self.authentication.clone(), self.executor.clone())
             .wait()
-            .map_err(|e| e.compat())
     }
 
     fn is_valid(&self, conn: &mut Producer) -> Result<(), Self::Error> {
-        conn.check_connection().wait().map_err(|e| e.compat())
+        conn.check_connection().map_err(|e| e.into()).wait()
     }
 
     fn has_broken(&self, conn: &mut Producer) -> bool {
@@ -101,6 +94,7 @@ mod tests {
         let pool = r2d2::Pool::new(ProducerConnectionManager::new(
             addr,
             "r2d2_test_producer",
+            None,
             runtime.executor()
         )).unwrap();
 
