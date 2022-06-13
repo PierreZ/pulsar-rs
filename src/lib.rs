@@ -176,6 +176,7 @@ pub use message::{
 };
 pub use producer::{MultiTopicProducer, Producer, ProducerOptions};
 
+pub mod authentication;
 mod client;
 mod connection;
 mod connection_manager;
@@ -185,7 +186,6 @@ pub mod executor;
 pub mod message;
 pub mod producer;
 pub mod reader;
-pub mod authentication;
 mod service_discovery;
 
 #[cfg(test)]

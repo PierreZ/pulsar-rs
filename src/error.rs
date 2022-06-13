@@ -334,20 +334,18 @@ impl std::error::Error for ServiceDiscoveryError {
 
 #[derive(Debug)]
 pub enum AuthenticationError {
-    Custom(String)
+    Custom(String),
 }
 
 impl fmt::Display for AuthenticationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AuthenticationError::Custom(m) => write!(f, "authentication error [{}]", m)
+            AuthenticationError::Custom(m) => write!(f, "authentication error [{}]", m),
         }
     }
 }
 
-impl std::error::Error for AuthenticationError {
-
-}
+impl std::error::Error for AuthenticationError {}
 
 #[derive(Clone)]
 pub(crate) struct SharedError {

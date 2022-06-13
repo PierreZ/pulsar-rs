@@ -1,4 +1,5 @@
 use crate::connection_manager::{BrokerAddress, ConnectionManager};
+use crate::error::ServiceDiscoveryError::NotFound;
 use crate::error::{ConnectionError, ServiceDiscoveryError};
 use crate::executor::Executor;
 use crate::message::proto::{
@@ -8,7 +9,6 @@ use crate::message::proto::{
 use futures::{future::try_join_all, FutureExt};
 use std::sync::Arc;
 use url::Url;
-use crate::error::ServiceDiscoveryError::NotFound;
 
 /// Look up broker addresses for topics and partitioned topics
 ///
@@ -271,10 +271,12 @@ fn convert_lookup_response(
         response.response == Some(command_lookup_topic_response::LookupType::Redirect as i32);
 
     let broker_url = match response.broker_service_url.as_ref() {
-        Some(u) => Some(Url::parse(&response.broker_service_url.clone().unwrap()).map_err(|e| {
-            error!("error parsing URL: {:?}", e);
-            ServiceDiscoveryError::NotFound
-        })?),
+        Some(u) => Some(
+            Url::parse(&response.broker_service_url.clone().unwrap()).map_err(|e| {
+                error!("error parsing URL: {:?}", e);
+                ServiceDiscoveryError::NotFound
+            })?,
+        ),
         None => None,
     };
 
