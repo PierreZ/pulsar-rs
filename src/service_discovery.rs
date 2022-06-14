@@ -8,6 +8,7 @@ use crate::message::proto::{
 };
 use futures::{future::try_join_all, FutureExt};
 use std::sync::Arc;
+use tracing::{error, trace};
 use url::Url;
 
 /// Look up broker addresses for topics and partitioned topics
@@ -26,6 +27,7 @@ impl<Exe: Executor> ServiceDiscovery<Exe> {
     }
 
     /// get the broker address for a topic
+    #[tracing::instrument(skip(self, topic))]
     pub async fn lookup_topic<S: Into<String>>(
         &self,
         topic: S,

@@ -32,6 +32,7 @@ use core::iter;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use std::convert::TryFrom;
+use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
 /// Configuration options for consumers
@@ -443,6 +444,7 @@ pub(crate) struct TopicConsumer<T: DeserializeMessage, Exe: Executor> {
 }
 
 impl<T: DeserializeMessage, Exe: Executor> TopicConsumer<T, Exe> {
+    #[tracing::instrument(skip(client, topic, addr, config))]
     async fn new(
         client: Pulsar<Exe>,
         topic: String,
@@ -652,6 +654,7 @@ impl<T: DeserializeMessage, Exe: Executor> TopicConsumer<T, Exe> {
         Ok(consumer_stats_response)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn check_connection(&mut self) -> Result<(), Error> {
         let conn = self.connection().await?;
         info!("check connection for id {}", conn.id());
@@ -823,6 +826,7 @@ impl<Exe: Executor> ConsumerEngine<Exe> {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     async fn engine(&mut self) -> Result<(), Error> {
         debug!("starting the consumer engine for topic {}", self.topic);
         let mut messages_or_ack_f = None;

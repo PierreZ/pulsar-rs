@@ -16,6 +16,7 @@ use crate::producer::{self, ProducerBuilder, SendFuture};
 use crate::service_discovery::ServiceDiscovery;
 use futures::lock::Mutex;
 use futures::StreamExt;
+use tracing::{error, event, span, Level};
 
 /// Helper trait for consumer deserialization
 pub trait DeserializeMessage {
@@ -157,6 +158,17 @@ pub struct Pulsar<Exe: Executor> {
 
 impl<Exe: Executor> Pulsar<Exe> {
     /// creates a new client
+    #[cfg_attr(
+        feature = "trace",
+        tracing::instrument(skip(
+            url,
+            auth,
+            connection_retry_parameters,
+            operation_retry_parameters,
+            tls_options,
+            executor,
+        ))
+    )]
     pub(crate) async fn new<S: Into<String>>(
         url: S,
         auth: Option<Arc<Mutex<Box<dyn crate::authentication::Authentication>>>>,
@@ -183,10 +195,15 @@ impl<Exe: Executor> Pulsar<Exe> {
         let weak_manager = Arc::downgrade(&manager);
         let mut interval = executor.interval(std::time::Duration::from_secs(60));
         let res = executor.spawn(Box::pin(async move {
+            let span = span!(Level::INFO, "connection checker");
+            let _guard = span.enter();
             while let Some(()) = interval.next().await {
+                event!(Level::DEBUG, "timer fired");
+
                 if let Some(strong_manager) = weak_manager.upgrade() {
                     strong_manager.check_connections().await;
                 } else {
+                    event!(Level::DEBUG, "stopping the task");
                     // if all the strong references to the manager were dropped,
                     // we can stop the task
                     break;
@@ -312,6 +329,7 @@ impl<Exe: Executor> Pulsar<Exe> {
     /// # Ok(())
     /// # }
     /// ```
+    #[tracing::instrument(skip(self, topic))]
     pub async fn lookup_topic<S: Into<String>>(&self, topic: S) -> Result<BrokerAddress, Error> {
         self.service_discovery
             .lookup_topic(topic)
@@ -347,6 +365,7 @@ impl<Exe: Executor> Pulsar<Exe> {
     /// # Ok(())
     /// # }
     /// ```
+    #[tracing::instrument(skip(self, topic))]
     pub async fn lookup_partitioned_topic<S: Into<String>>(
         &self,
         topic: S,
@@ -367,6 +386,7 @@ impl<Exe: Executor> Pulsar<Exe> {
     /// # Ok(())
     /// # }
     /// ```
+    #[tracing::instrument(skip(self))]
     pub async fn get_topics_of_namespace(
         &self,
         namespace: String,

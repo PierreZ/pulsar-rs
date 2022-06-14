@@ -15,6 +15,7 @@ use crate::message::BatchedMessage;
 use crate::{Error, Pulsar};
 use futures::task::{Context, Poll};
 use futures::Future;
+use tracing::{debug, error, trace};
 
 type ProducerId = u64;
 type ProducerName = String;
@@ -175,6 +176,7 @@ impl<Exe: Executor> MultiTopicProducer<Exe> {
     }
 
     /// sends one message on a topic
+    #[tracing::instrument(skip(self, topic, message))]
     pub async fn send<T: SerializeMessage + Sized, S: Into<String>>(
         &mut self,
         topic: S,
@@ -200,6 +202,7 @@ impl<Exe: Executor> MultiTopicProducer<Exe> {
     }
 
     /// sends a list of messages on a topic
+    #[tracing::instrument(skip(self, topic, messages))]
     pub async fn send_all<'a, 'b, T, S, I>(
         &mut self,
         topic: S,
@@ -751,9 +754,11 @@ impl<Exe: Executor> TopicProducer<Exe> {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     async fn reconnect(&mut self) -> Result<(), Error> {
         debug!("reconnecting producer for topic: {}", self.topic);
         let broker_address = self.client.lookup_topic(&self.topic).await?;
+        trace!("topic {} is on {}", self.topic, broker_address.broker_url);
         let conn = self.client.manager.get_connection(&broker_address).await?;
 
         self.connection = conn;

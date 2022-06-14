@@ -31,6 +31,7 @@ use crate::message::{
 use crate::producer::{self, ProducerOptions};
 use async_trait::async_trait;
 use futures::lock::Mutex;
+use tracing::{Level, debug, error, event, trace, warn};
 
 pub(crate) enum Register {
     Request {
@@ -147,6 +148,7 @@ impl<S: Stream<Item = Result<Message, ConnectionError>>> Future for Receiver<S> 
                     self.ping = Some(resolver);
                 }
                 Poll::Ready(None) => {
+                    event!(Level::DEBUG, "Returning an error during poll");
                     self.error.set(ConnectionError::Disconnected);
                     return Poll::Ready(Err(()));
                 }
@@ -219,11 +221,13 @@ impl<S: Stream<Item = Result<Message, ConnectionError>>> Future for Receiver<S> 
                     },
                 },
                 Poll::Ready(None) => {
+                    event!(Level::DEBUG, "polled None, returning an error");
                     self.error.set(ConnectionError::Disconnected);
                     return Poll::Ready(Err(()));
                 }
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(Err(e))) => {
+                    event!(Level::DEBUG, "{}", format!("polled an error: {}", e));
                     self.error.set(e);
                     return Poll::Ready(Err(()));
                 }
@@ -283,6 +287,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         }
     }
 
+    #[tracing::instrument(skip(self, message))]
     pub(crate) async fn send(
         &self,
         producer_id: u64,
@@ -299,6 +304,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
             .await
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn send_ping(&self) -> Result<(), ConnectionError> {
         let (resolver, response) = oneshot::channel();
         trace!("sending ping");
@@ -336,6 +342,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         }
     }
 
+    #[tracing::instrument(skip(self, topic))]
     pub async fn lookup_topic<S: Into<String>>(
         &self,
         topic: S,
@@ -349,6 +356,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self, topic))]
     pub async fn lookup_partitioned_topic<S: Into<String>>(
         &self,
         topic: S,
@@ -361,6 +369,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_consumer_stats(
         &self,
         consumer_id: u64,
@@ -373,6 +382,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_last_message_id(
         &self,
         consumer_id: u64,
@@ -385,6 +395,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self, options))]
     pub async fn create_producer(
         &self,
         topic: String,
@@ -400,6 +411,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_topics_of_namespace(
         &self,
         namespace: String,
@@ -413,6 +425,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn close_producer(
         &self,
         producer_id: u64,
@@ -425,6 +438,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self, resolver, options))]
     pub async fn subscribe(
         &self,
         resolver: mpsc::UnboundedSender<Message>,
@@ -461,12 +475,14 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn send_flow(&self, consumer_id: u64, message_permits: u32) -> Result<(), ConnectionError> {
         self.tx
             .unbounded_send(messages::flow(consumer_id, message_permits))
             .map_err(|_| ConnectionError::Disconnected)
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn send_ack(
         &self,
         consumer_id: u64,
@@ -478,6 +494,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
             .map_err(|_| ConnectionError::Disconnected)
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn send_redeliver_unacknowleged_messages(
         &self,
         consumer_id: u64,
@@ -491,6 +508,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
             .map_err(|_| ConnectionError::Disconnected)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn close_consumer(
         &self,
         consumer_id: u64,
@@ -503,6 +521,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn seek(
         &self,
         consumer_id: u64,
@@ -517,6 +536,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn unsubscribe(
         &self,
         consumer_id: u64,
@@ -529,6 +549,7 @@ impl<Exe: Executor> ConnectionSender<Exe> {
         .await
     }
 
+    #[tracing::instrument(skip(self, msg, key, extract))]
     async fn send_message<R: Debug, F>(
         &self,
         msg: Message,
@@ -585,6 +606,14 @@ pub struct Connection<Exe: Executor> {
 }
 
 impl<Exe: Executor> Connection<Exe> {
+    #[tracing::instrument(skip(
+        url,
+        auth_data,
+        proxy_to_broker_url,
+        certificate_chain,
+        allow_insecure_connection,
+        executor
+    ))]
     pub async fn new(
         url: Url,
         auth_data: Option<Arc<Mutex<Box<dyn crate::authentication::Authentication>>>>,
@@ -675,6 +704,7 @@ impl<Exe: Executor> Connection<Exe> {
         Ok(Connection { id, url, sender })
     }
 
+    #[tracing::instrument(skip(auth))]
     async fn prepare_auth_data(
         auth: Option<Arc<Mutex<Box<dyn crate::authentication::Authentication>>>>,
     ) -> Result<Option<Authentication>, ConnectionError> {
@@ -690,6 +720,7 @@ impl<Exe: Executor> Connection<Exe> {
         }
     }
 
+    #[tracing::instrument(skip(address, certificate_chain, executor))]
     async fn prepare_stream(
         address: SocketAddr,
         hostname: String,
@@ -797,6 +828,13 @@ impl<Exe: Executor> Connection<Exe> {
         }
     }
 
+    #[tracing::instrument(skip(
+        stream,
+        auth_data,
+        proxy_to_broker_url,
+        executor,
+        operation_timeout
+    ))]
     pub async fn connect<S>(
         mut stream: S,
         auth_data: Option<Authentication>,
@@ -916,6 +954,7 @@ impl<Exe: Executor> Connection<Exe> {
 }
 
 impl<Exe: Executor> Drop for Connection<Exe> {
+    #[tracing::instrument(skip(self))]
     fn drop(&mut self) {
         trace!("dropping connection {} for {}", self.id, self.url);
         if let Some(shutdown) = self.sender.receiver_shutdown.take() {

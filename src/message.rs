@@ -11,6 +11,7 @@ use nom::{
 use prost::{self, Message as ImplProtobuf};
 use std::convert::TryFrom;
 use std::io::Cursor;
+use tracing::{trace, warn};
 
 const CRC_CASTAGNOLI: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_ISCSI);
 

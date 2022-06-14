@@ -63,6 +63,7 @@ pub mod oauth2 {
     use openidconnect::core::CoreProviderMetadata;
     use openidconnect::IssuerUrl;
     use serde::Deserialize;
+    use tracing::{debug, warn};
     use url::Url;
 
     use crate::authentication::Authentication;
@@ -191,6 +192,7 @@ pub mod oauth2 {
             String::from("token")
         }
 
+        #[tracing::instrument(skip(self))]
         async fn initialize(&mut self) -> Result<(), AuthenticationError> {
             match self.params.read_private_params() {
                 Ok(private_params) => self.private_params = Some(private_params),
@@ -202,6 +204,7 @@ pub mod oauth2 {
             Ok(())
         }
 
+        #[tracing::instrument(skip(self))]
         async fn auth_data(&mut self) -> Result<Vec<u8>, AuthenticationError> {
             if self.private_params.is_none() {
                 return Err(AuthenticationError::Custom("not initialized".to_string()));
@@ -263,6 +266,7 @@ pub mod oauth2 {
             }
         }
 
+        #[tracing::instrument(skip(self))]
         async fn fetch_token(&mut self) -> Result<BasicTokenResponse, Box<dyn std::error::Error>> {
             let private_params = self
                 .private_params

@@ -8,6 +8,7 @@ use std::time::Duration;
 use futures::{channel::oneshot, lock::Mutex};
 use native_tls::Certificate;
 use rand::Rng;
+use tracing::{debug, error, event, info, span, trace, Level, Instrument};
 use url::Url;
 
 /// holds connection information for a broker
@@ -120,6 +121,7 @@ pub struct ConnectionManager<Exe: Executor> {
 }
 
 impl<Exe: Executor> ConnectionManager<Exe> {
+    #[tracing::instrument(skip(auth, tls, executor))]
     pub async fn new(
         url: String,
         auth: Option<Arc<Mutex<Box<dyn crate::authentication::Authentication>>>>,
@@ -199,6 +201,7 @@ impl<Exe: Executor> ConnectionManager<Exe> {
     /// get an active Connection from a broker address
     ///
     /// creates a connection if not available
+    #[tracing::instrument(skip(self))]
     pub async fn get_base_connection(&self) -> Result<Arc<Connection<Exe>>, ConnectionError> {
         let broker_address = BrokerAddress {
             url: self.url.clone(),
@@ -216,22 +219,33 @@ impl<Exe: Executor> ConnectionManager<Exe> {
     /// get an active Connection from a broker address
     ///
     /// creates a connection if not available
+    #[tracing::instrument(skip(self))]
     pub async fn get_connection(
         &self,
         broker: &BrokerAddress,
     ) -> Result<Arc<Connection<Exe>>, ConnectionError> {
         let rx = {
             let mut conns = self.connections.lock().await;
+            event!(Level::DEBUG, "retrieved connections");
             match conns.get_mut(broker) {
-                None => None,
+                None => {
+                    event!(Level::DEBUG, "{}",format!("cannot find cnx for broker {}", broker.broker_url));
+                    None
+                },
                 Some(ConnectionStatus::Connected(conn)) => {
                     if conn.is_valid() {
+                        event!(Level::DEBUG, "found a connected connection");
                         return Ok(conn.clone());
                     } else {
+                        event!(Level::DEBUG, "found a connected, but invalid connection");
                         None
                     }
                 }
                 Some(ConnectionStatus::Connecting(ref mut v)) => {
+                    event!(
+                        Level::DEBUG,
+                        "found a connection currently in connecting state"
+                    );
                     let (tx, rx) = oneshot::channel();
                     v.push(tx);
                     Some(rx)
@@ -248,6 +262,7 @@ impl<Exe: Executor> ConnectionManager<Exe> {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     async fn connect_inner(
         &self,
         broker: &BrokerAddress,
@@ -363,6 +378,7 @@ impl<Exe: Executor> ConnectionManager<Exe> {
         Ok(c)
     }
 
+    #[tracing::instrument(skip(self))]
     async fn connect(
         &self,
         broker: BrokerAddress,
@@ -404,8 +420,14 @@ impl<Exe: Executor> ConnectionManager<Exe> {
         let broker_url = broker.url.clone();
         let proxy_to_broker_url = proxy_url.clone();
         let res = self.executor.spawn(Box::pin(async move {
+            let span = span!(Level::DEBUG, "cnx heartbeat task", connection_id);
+            let _guard = span.enter();
+
             use crate::futures::StreamExt;
             while let Some(()) = interval.next().await {
+                let inner_span = span!(Level::DEBUG, "cnx heartbeat", connection_id);
+                let _inner_guard = inner_span.enter();
+
                 if let Some(url) = proxy_to_broker_url.as_ref() {
                     trace!(
                         "will ping connection {} to {} via proxy {}",
@@ -451,16 +473,16 @@ impl<Exe: Executor> ConnectionManager<Exe> {
             .insert(broker, ConnectionStatus::Connected(c.clone()));
         match old {
             Some(ConnectionStatus::Connecting(mut v)) => {
-                //info!("was in connecting state({} waiting)", v.len());
+                info!("was in connecting state({} waiting)", v.len());
                 for tx in v.drain(..) {
                     let _ = tx.send(Ok(c.clone()));
                 }
             }
             Some(ConnectionStatus::Connected(_)) => {
-                //info!("removing old connection");
+                info!("removing old connection");
             }
             None => {
-                //info!("setting up new connection");
+                info!("setting up new connection");
             }
         };
 
@@ -468,6 +490,7 @@ impl<Exe: Executor> ConnectionManager<Exe> {
     }
 
     /// tests that all connections are valid and still used
+    #[tracing::instrument(skip(self))]
     pub(crate) async fn check_connections(&self) {
         trace!("cleaning invalid or unused connections");
         self.connections

@@ -148,8 +148,6 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::large_enum_variant)]
 extern crate futures;
-#[macro_use]
-extern crate log;
 extern crate nom;
 extern crate prost_derive;
 
@@ -197,6 +195,7 @@ mod tests {
 
     #[cfg(feature = "tokio-runtime")]
     use tokio::time::timeout;
+    use tracing::{debug, info};
 
     #[cfg(feature = "tokio-runtime")]
     use crate::executor::TokioExecutor;
