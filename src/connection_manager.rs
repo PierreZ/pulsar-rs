@@ -8,7 +8,7 @@ use std::time::Duration;
 use futures::{channel::oneshot, lock::Mutex};
 use native_tls::Certificate;
 use rand::Rng;
-use tracing::{debug, error, event, info, span, trace, Level, Instrument};
+use tracing::{debug, error, event, info, span, trace, Instrument, Level};
 use url::Url;
 
 /// holds connection information for a broker
@@ -229,9 +229,13 @@ impl<Exe: Executor> ConnectionManager<Exe> {
             event!(Level::DEBUG, "retrieved connections");
             match conns.get_mut(broker) {
                 None => {
-                    event!(Level::DEBUG, "{}",format!("cannot find cnx for broker {}", broker.broker_url));
+                    event!(
+                        Level::DEBUG,
+                        "{}",
+                        format!("cannot find cnx for broker {}", broker.broker_url)
+                    );
                     None
-                },
+                }
                 Some(ConnectionStatus::Connected(conn)) => {
                     if conn.is_valid() {
                         event!(Level::DEBUG, "found a connected connection");

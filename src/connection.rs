@@ -31,7 +31,7 @@ use crate::message::{
 use crate::producer::{self, ProducerOptions};
 use async_trait::async_trait;
 use futures::lock::Mutex;
-use tracing::{Level, debug, error, event, trace, warn};
+use tracing::{debug, error, event, trace, warn, Level};
 
 pub(crate) enum Register {
     Request {

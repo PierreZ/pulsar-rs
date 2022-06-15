@@ -16,7 +16,7 @@ use crate::producer::{self, ProducerBuilder, SendFuture};
 use crate::service_discovery::ServiceDiscovery;
 use futures::lock::Mutex;
 use futures::StreamExt;
-use tracing::{error, event, span, Level};
+use tracing::{debug, error, event, span, Level};
 
 /// Helper trait for consumer deserialization
 pub trait DeserializeMessage {
@@ -158,17 +158,14 @@ pub struct Pulsar<Exe: Executor> {
 
 impl<Exe: Executor> Pulsar<Exe> {
     /// creates a new client
-    #[cfg_attr(
-        feature = "trace",
-        tracing::instrument(skip(
-            url,
-            auth,
-            connection_retry_parameters,
-            operation_retry_parameters,
-            tls_options,
-            executor,
-        ))
-    )]
+    #[tracing::instrument(skip(
+        url,
+        auth,
+        connection_retry_parameters,
+        operation_retry_parameters,
+        tls_options,
+        executor,
+    ))]
     pub(crate) async fn new<S: Into<String>>(
         url: S,
         auth: Option<Arc<Mutex<Box<dyn crate::authentication::Authentication>>>>,
@@ -566,6 +563,7 @@ struct SendMessage {
     resolver: oneshot::Sender<Result<CommandSendReceipt, Error>>,
 }
 
+#[tracing::instrument(skip(client, messages))]
 async fn run_producer<Exe: Executor>(
     client: Pulsar<Exe>,
     mut messages: mpsc::UnboundedReceiver<SendMessage>,
@@ -577,13 +575,18 @@ async fn run_producer<Exe: Executor>(
         resolver,
     }) = messages.next().await
     {
+        debug!("received a message to send towards a producer");
         match producer.send(topic, payload).await {
             Ok(future) => {
+                debug!("producer.sent is ok");
                 let _ = client.executor.spawn(Box::pin(async move {
+                    let span = span!(Level::INFO, "waiting for SendFuture");
+                    let _guard = span.enter();
                     let _ = resolver.send(future.await);
                 }));
             }
             Err(e) => {
+                error!("received an error during producer.sent");
                 let _ = resolver.send(Err(e));
             }
         }
