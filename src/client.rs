@@ -591,4 +591,5 @@ async fn run_producer<Exe: Executor>(
             }
         }
     }
+    debug!("exiting run_producer");
 }
